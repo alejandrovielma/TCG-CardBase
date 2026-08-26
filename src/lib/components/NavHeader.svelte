@@ -9,7 +9,7 @@
     let isMobileMenuOpen = false;
     let currentLanguage = pageLanguage === 'en' ? 'En' : 'Es';
     let isMobile = false;
-    let languageMenuRef = true;
+    let languageMenuRef: HTMLElement | null = null;
 
     function toggleLanguageMenu() {
         isLanguageMenuOpen = !isLanguageMenuOpen;

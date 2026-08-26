@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { getCardsByName, getCardFromQuery, getCardFromId, getCardsBySet, getCardsByType, getCardsByRarity } from "$lib/api/cards";
+  import { getCardsByName, getCardFromQuery, getCardFromId, getCardsBySet } from "$lib/api/cards";
   import { Query, type CardResume } from "@tcgdex/sdk";
   import SelectButton from "$lib/components/Select-button.svelte";
   import SearchBar from "$lib/components/Search-bar.svelte";
@@ -47,9 +47,9 @@
       let comparison = 0;
       
       if (sortBy === 'id') {
-        comparison = a.name.localeCompare(b.name, 'es', { 
+        comparison = a.id.localeCompare(b.id, 'es', {
           sensitivity: 'base',
-          numeric: true 
+          numeric: true
         });
       } else if (sortBy === 'name') {
         comparison = a.name.localeCompare(b.name, 'es', { 
@@ -101,23 +101,21 @@
         currentSetName = await getNameById(setId) || '';
         result = await getCardsBySet(setId, paginate, 20) || [];
         hasMore = result && result.length === 20;                       // Verificar si hay mas pag
-        console.log('carta busca la imagen', result);
         if (!result || result.length == 0) {                            //en caso de qu eno hayan cartas en ese sets, cargamos las normales
-          result = await getCardFromQuery(Query.create(), paginate) || [];
-          console.log(result);
-          
-          hasMore = result;
+          result = await getCardFromQuery(Query.create(), paginate, 20, 'all') || [];
+
+          hasMore = result.length === 20;
           cardsFromSet = false; // Indicar que no son cartas del set
         } else {
           cardsFromSet = true; // Indicar que sí son cartas del set
         }
       } else {                                                        //si no existe un set en la url, muestras cartas normales
-        result = await getCardFromQuery(Query.create(), paginate) || [];
-        hasMore = !!result;
+        result = await getCardFromQuery(Query.create(), paginate, 20, 'all') || [];
+        hasMore = result.length === 20;
         cardsFromSet = false;
       }
-    } catch (error) {
-      console.error('Error al cargar cartas:', error);
+    } catch (e) {
+      console.error('Error al cargar cartas:', e);
       error = "Error al cargar cartas";
       result = [];
       hasMore = false;
@@ -147,7 +145,7 @@
     try {
       let result: CardResume[] = [];
       if (!name) {
-        result = await getCardFromQuery(Query.create(), paginate) || [];
+        result = await getCardFromQuery(Query.create(), paginate, 20, 'all') || [];
       } else {
         result = await getCardsByName(name, paginate) || [];
       }
@@ -169,52 +167,24 @@
     loading = false;
   }
 
-  async function fetchCardsByType(type: string, reset = true) {
-    loading = true;
-    error = "";
-    if (reset) {
-      cards = [];
-      filteredCards = [];
-      paginate = 0;
-      hasMore = true;
-    }
-    try {
-      let result: CardResume[] = await getCardsByType(type, paginate) || [];
-      if (reset) {
-        cards = result || [];
-      } else {
-        const ids = new Set(cards.map((c: CardResume) => c.id));
-        cards = [...cards, ...result.filter((c: CardResume) => !ids.has(c.id))];
-      }
-      filteredCards = sortCards(cards);
-      hasMore = (result || []).length === 20;
-    } catch (e) {
-      error = "Error al buscar cartas por tipo";
-      cards = [];
-      filteredCards = [];
-      hasMore = false;
-    }
-    loading = false;
-  }
+  let lastAdvancedFilters: { tipo?: string; set?: string; rareza?: string } | null = null;
 
   function handleAdvancedSearch(event: CustomEvent<{ tipo?: string; set?: string; rareza?: string }>) {
     const { tipo, set, rareza } = event.detail;
     advancedType = tipo || "";
     search = "";
     paginate = 0;
-    // Prioridad: set > tipo > rareza
-    if (set) {
-      fetchCardsBySetSearch(set, true);
-    } else if (tipo) {
-      fetchCardsByType(tipo, true);
-    } else if (rareza) {
-      fetchCardsByRarity(rareza, true);
-    } else {
+    if (!set && !tipo && !rareza) {
+      lastAdvancedFilters = null;
       fetchCards(true);
+      return;
     }
+    lastAdvancedFilters = { tipo, set, rareza };
+    fetchCardsAdvanced(lastAdvancedFilters, true);
   }
 
-  async function fetchCardsBySetSearch(setId: string, reset = true) {
+  // Combina set + tipo + rareza en una sola query, en vez de aplicar solo el de mayor prioridad
+  async function fetchCardsAdvanced(filters: { tipo?: string; set?: string; rareza?: string }, reset = true) {
     loading = true;
     error = "";
     if (reset) {
@@ -224,36 +194,13 @@
       hasMore = true;
     }
     try {
-      let result = await getCardsBySet(setId, paginate, 20) || [];
-      if (reset) {
-        cards = result || [];
-      } else {
-        const ids = new Set(cards.map((c: CardResume) => c.id));
-        cards = [...cards, ...result.filter((c: CardResume) => !ids.has(c.id))];
-      }
-      filteredCards = sortCards(cards);
-      hasMore = (result || []).length === 20;
-    } catch (e) {
-      error = "Error al buscar cartas por set";
-      cards = [];
-      filteredCards = [];
-      hasMore = false;
-    }
-    loading = false;
-  }
+      let query = Query.create();
+      if (filters.set) query = query.includes("set", filters.set);
+      if (filters.tipo) query = query.contains("types", filters.tipo);
+      if (filters.rareza) query = query.contains("rarity", filters.rareza);
 
-  // Nueva función para filtrar por rareza
-  async function fetchCardsByRarity(rarity: string, reset = true) {
-    loading = true;
-    error = "";
-    if (reset) {
-      cards = [];
-      filteredCards = [];
-      paginate = 0;
-      hasMore = true;
-    }
-    try {
-      let result: CardResume[] = await getCardsByRarity(rarity, paginate) || [];
+      const cacheKeySuffix = `advanced_set-${filters.set ?? ''}_tipo-${filters.tipo ?? ''}_rareza-${filters.rareza ?? ''}`;
+      const result: CardResume[] = await getCardFromQuery(query, paginate, 20, cacheKeySuffix) || [];
       if (reset) {
         cards = result || [];
       } else {
@@ -263,7 +210,7 @@
       filteredCards = sortCards(cards);
       hasMore = (result || []).length === 20;
     } catch (e) {
-      error = "Error al buscar cartas por rareza";
+      error = "Error al buscar cartas";
       cards = [];
       filteredCards = [];
       hasMore = false;
@@ -284,9 +231,11 @@
 
   function cargarMas() {
     paginate += 1;
-    
+
     if (search && search.trim() !== "") {
       fetchFilteredCards(search, false);
+    } else if (lastAdvancedFilters) {
+      fetchCardsAdvanced(lastAdvancedFilters, false);
     } else {
       fetchCards(false);
     }
@@ -300,8 +249,7 @@
     selectedCardFull = null;
     // Espera la info completa de la carta
     const cardFull = await getCardFromId(card.id);
-    console.log('prueba 2', cardFull);
-    
+
     selectedCardFull = cardFull;
     loadingCard = false;
     

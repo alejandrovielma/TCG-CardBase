@@ -1,7 +1,7 @@
 <script lang="ts">
     import { createEventDispatcher, onMount } from "svelte";
     import { getAllSets } from "$lib/api/sets";
-    import { getAllRarities } from "$lib/api/cards";
+    import { getAllRarities, getAllTypes } from "$lib/api/cards";
     import { pageTexts } from '$lib/constants/allTexts';
     import { pageLanguage } from '$lib/language/languajeHandler';
     const dispatch = createEventDispatcher();
@@ -11,30 +11,23 @@
     let selectedRarity = "";
     let sets = [];
     let rarities = [];
-    // Lista de tipos 
-    const tipos = [
-        "guego", "Agua", "Planta", "Rayo", "Psíquico", "Lucha", "incolora", "metalica", "Metálica", "Oscura", "Dragón"
-    ];
+    let tipos: string[] = [];
     function toggle() {
         open = !open;
-        console.log("Dropdown toggled:", open);
     }
-    // usamos el filtro seleccionado
+    // usamos todos los filtros seleccionados juntos, no solo el de mayor prioridad
     function buscar() {
-        if (selectedSet) {
-            dispatch("search", { set: selectedSet });
-        } else if (selectedType) {
-            dispatch("search", { tipo: selectedType });
-        } else if (selectedRarity) {
-            dispatch("search", { rareza: selectedRarity });
-        } else {
-            dispatch("search", {});
-        }
+        dispatch("search", {
+            set: selectedSet || undefined,
+            tipo: selectedType || undefined,
+            rareza: selectedRarity || undefined
+        });
     }
     // Cargar sets y rarezas al montar el componente
     onMount(async () => {
         sets = await getAllSets() || [];
         rarities = await getAllRarities() || [];
+        tipos = await getAllTypes() || [];
     });
 </script>
 

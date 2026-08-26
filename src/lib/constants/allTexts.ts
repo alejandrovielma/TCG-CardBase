@@ -1,6 +1,6 @@
 export const pageTexts = {
   es: {
-    apiStagePokemon: "Basico",
+    apiStagePokemon: "Básico",
     apiTrainer: "Partidario",
     cardName: "Nombre de la carta",
     hp: "PS",

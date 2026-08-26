@@ -52,13 +52,11 @@
       result = await getCardsByName(card.name.split(' ')[0], 0);           // Buscar por nombre
       if (!result) {
         if (card.types && card.types[0]) {// Buscar por tipo
-          result = await getCardFromQuery(Query.create().contains('types', card.types[0]), 0);
+          result = await getCardFromQuery(Query.create().contains('types', card.types[0]), 0, 20, `related-type-${card.types[0]}`);
         }
       }
-      
+
       relatedCards = (result || []).filter(c => c.id !== card.id).slice(0, 20);         // sin la carta actual
-      console.log(relatedCards[0].image);
-      
     }
 
     onMount(fetchRelatedCards);

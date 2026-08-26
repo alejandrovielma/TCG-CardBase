@@ -44,27 +44,52 @@ import { pageLanguage } from "$lib/language/languajeHandler";
   let basicPokemon: CleanCardResume[] = [];
   let loading = false;
 
+  // Tamaño de baraja oficial: 60 cartas (20 Pokemon + 25 Entrenadores + 15 Energias)
+  const POKEMON_TARGET = 20;
+  const TRAINER_TARGET = 25;
+  const ENERGY_TARGET = 15;
+
+  // Limita a lo sumo maxCopies cartas con el mismo id (regla de maximo 4 copias)
+  function capCopies<T extends { id: string }>(cards: T[], maxCopies: number): T[] {
+    const counts = new Map<string, number>();
+    return cards.filter((c) => {
+      const n = counts.get(c.id) ?? 0;
+      if (n >= maxCopies) return false;
+      counts.set(c.id, n + 1);
+      return true;
+    });
+  }
+
   // Genera una baraja según las reglas oficiales usando getCardFromQuery
   async function generateDeck() {
     loading = true;
-    console.log("Generando baraja...");
     trainersCards = [];
     basicPokemon = [];
+    let guaranteedBasics: CleanCardResume[] = [];
 
-    // Pedir 20 de cada set y juntar todo
     for (const set of selectedSets) {
-      const trainers = await getTrainerCards(0, 20, set);
+      const trainers = await getTrainerCards(0, TRAINER_TARGET, set);
       trainersCards.push(...trainers);
-      const pokemons = await getPokemonWithBasic(18, set);
+      const pokemons = await getPokemonWithBasic(POKEMON_TARGET, set);
+      if (pokemons.length > 0) guaranteedBasics.push(pokemons[0]); // getPokemonWithBasic garantiza que el primero sea basico
       basicPokemon.push(...pokemons);
     }
-    // Mezclar aleatoriamente y limitar a 20
-    trainersCards = shuffleArray(trainersCards).slice(0, 20);
-    basicPokemon = shuffleArray(basicPokemon).slice(0, 18);
-    energyCards = await getRandomEnergyCards(6);
-    console.log("Sets seleccionados:", selectedSets);
-    generatedDeck = [...trainersCards, ...energyCards, ...basicPokemon]; // Esto sí actualiza el state
-    console.log("Baraja generada:", generatedDeck);
+
+    // Mezclar, aplicar el limite de 4 copias y recortar al tamano objetivo
+    trainersCards = capCopies(shuffleArray(trainersCards), 4).slice(0, TRAINER_TARGET);
+
+    let selectedPokemon = capCopies(shuffleArray(basicPokemon), 4).slice(0, POKEMON_TARGET);
+    // Garantizar al menos 1 Pokemon basico en la baraja final
+    const hasBasic = guaranteedBasics.some((g) => selectedPokemon.some((p) => p.id === g.id));
+    if (!hasBasic && guaranteedBasics.length > 0) {
+      selectedPokemon = [...selectedPokemon.slice(0, POKEMON_TARGET - 1), guaranteedBasics[0]];
+    }
+    basicPokemon = selectedPokemon;
+
+    // Las energias basicas no tienen limite de copias, por eso quedan fuera de capCopies
+    energyCards = await getRandomEnergyCards(ENERGY_TARGET);
+
+    generatedDeck = [...trainersCards, ...energyCards, ...basicPokemon];
     loading = false;
   }
 

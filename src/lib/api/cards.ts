@@ -70,30 +70,28 @@ const cleanCardData = (card: any) => {
         };
 };
 
-// Obtener energías de 2 tipos aleatorios
-export const getRandomEnergyCards = async (amountPerType: number = 5) => {
+// Obtener `totalCount` cartas de energia basica, repartidas entre 2 tipos aleatorios
+export const getRandomEnergyCards = async (totalCount: number = 10) => {
     // Tipos de energía comunes en Pokémon TCG
     const energyTypes = await tcgdex.energyType.list();
-    let allCards: CleanCardResume[] = [];
     const cards = await tcgdex.card.list(
         Query.create()
             .contains("energyType", energyTypes[0])
             .not.isNull("image")
-            .paginate(0, amountPerType)
+            .paginate(0, 2)
     );
-    var cleaned = cleanCardResumeList(cards);
-
+    const cleaned = cleanCardResumeList(cards);
     const shuffledCleaned = shuffleArray(cleaned);
 
-    // Duplicar la primera y segunda carta 6 veces cada una
-    if (shuffledCleaned.length >= 2) {
-        const first = Array(amountPerType).fill(shuffledCleaned[0]);
-        const second = Array(amountPerType).fill(shuffledCleaned[1]);
-        allCards = [...first, ...second];
-    } else {
-        allCards = cleaned;
-    }
-    return allCards;
+    if (shuffledCleaned.length < 2) return cleaned;
+
+    // Repartir el total entre las 2 cartas de energia elegidas
+    const firstCount = Math.ceil(totalCount / 2);
+    const secondCount = totalCount - firstCount;
+    return [
+        ...Array(firstCount).fill(shuffledCleaned[0]),
+        ...Array(secondCount).fill(shuffledCleaned[1]),
+    ];
 }
 
 // Obtener Pokémon con al menos 1 básico
@@ -128,7 +126,7 @@ export const getPokemonWithBasic = async (amount: number = 20, set: string) => {
 }
 
 const randomCards = async () => {                   //obtiene una lista de cartas random 
-    const cacheKey = 'random-list-card';
+    const cacheKey = `random-list-card_${pageLanguage}`;
     // Intentar obtener de cache primero
     const cacheData = CacheService.get(cacheKey);
     if (cacheData) {
@@ -221,21 +219,23 @@ export const getTrainerCards = async (page: number = 0, amount: number = 20, set
 
 
 
-export const getCardFromQuery = async (query:Query, page:number, amount:number = 20 ) => {
+// cacheKeySuffix identifica de forma unica los filtros aplicados a `query`.
+// Necesario porque Query.toString() de @tcgdex/sdk no serializa sus filtros
+// (siempre da "[object Object]"), asi que sin esto todas las queries distintas
+// colisionaban en la misma entrada de cache.
+export const getCardFromQuery = async (query: Query, page: number, amount: number = 20, cacheKeySuffix: string = '') => {
     try {
-        const cacheKey = `fromQuery-list-card_${query.toString()}_page_${page}`
+        const cacheKey = `fromQuery-list-card_${cacheKeySuffix}_page_${page}_${pageLanguage}`
         // Intentar obtener de cache primero
         const cacheData = CacheService.get(cacheKey);
         if (cacheData) {
-            console.log('Lista de cartas obtenidas en cache: ', cacheData);
             return cacheData;
         }
-    
+
         //si no esta en cache buscar en la api
         const cardsResponse = await tcgdex.card.list(
             query.paginate(page, amount).not.isNull("image") // ejemplo de query, puedes cambiarlo
-        );    
-        console.log('Cartas obtenidas de la API:', cardsResponse);
+        );
 
         //guardar en cache
         const cleanedCards = cleanCardResumeList(cardsResponse);
@@ -246,13 +246,12 @@ export const getCardFromQuery = async (query:Query, page:number, amount:number =
                     cleanedCards,
                     {
                         memoryExpiration: 5 * 60 * 1000,                    // 5 minutos en memoria
-                        localStorageExpiration: 24 * 60 * 60 * 1000         // 24 horas en localStorage        
+                        localStorageExpiration: 24 * 60 * 60 * 1000         // 24 horas en localStorage
                     }
                 );
             }
         }
 
-        console.log('Cartas obtenidas:', cleanedCards);
         return cleanedCards;
     } catch (error) {
         console.error('Error:', error);
@@ -262,7 +261,7 @@ export const getCardFromQuery = async (query:Query, page:number, amount:number =
 
 export const getCardsByName = async (name: string, page: number = 0) => {
     try {
-        const cacheKey = `fromQuery-list-card_${name.toString()}_page_${page}`
+        const cacheKey = `fromQuery-list-card_${name.toString()}_page_${page}_${pageLanguage}`
         // Intentar obtener de cache primero
         const cacheData = CacheService.get(cacheKey);
         if (cacheData) {
@@ -300,7 +299,7 @@ export const getCardsByName = async (name: string, page: number = 0) => {
 
 export const getCardFromId = async (id: string) => {
     // Intentar obtener de cache primero
-    const cachedCard = CacheService.get(`card-${id}`);
+    const cachedCard = CacheService.get(`card-${id}_${pageLanguage}`);
     if (cachedCard) {
         return cachedCard;
     }
@@ -315,7 +314,7 @@ export const getCardFromId = async (id: string) => {
     // guardar en cache
     const cleanCard = cleanCardData(card);
     try {
-        CacheService.set(`card-${id}`, cleanCard, {
+        CacheService.set(`card-${id}_${pageLanguage}`, cleanCard, {
             memoryExpiration: 5 * 60 * 1000, // 5 minutos en memoria
             localStorageExpiration: 24 * 60 * 60 * 1000 // 24 horas en localStorage
         });
@@ -349,7 +348,7 @@ export const getRandomCard = async () => {
 
 export const getCardsByType = async (type: string, page: number = 0) => {
     try {
-        const cacheKey = `fromQuery-list-card_type_${type}_page_${page}`;
+        const cacheKey = `fromQuery-list-card_type_${type}_page_${page}_${pageLanguage}`;
         // Intentar obtener de cache primero
         const cacheData = CacheService.get(cacheKey);
         if (cacheData) {
@@ -382,8 +381,24 @@ export const getCardsByType = async (type: string, page: number = 0) => {
     }
 }
 
+export const getAllTypes = async () => {
+    const cacheKey = `all-types-list_${pageLanguage}`;
+    const cacheData = CacheService.get(cacheKey);
+    if (cacheData) {
+        return cacheData;
+    }
+    const types = await tcgdex.type.list();
+    if (types) {
+        CacheService.set(cacheKey, types, {
+            memoryExpiration: 5 * 60 * 1000, // 5 minutos en memoria
+            localStorageExpiration: 24 * 60 * 60 * 1000 // 24 horas en localStorage
+        });
+    }
+    return types;
+}
+
 export const getAllRarities = async () => {
-    const cacheKey = 'all-rarities-list';
+    const cacheKey = `all-rarities-list_${pageLanguage}`;
     const cacheData = CacheService.get(cacheKey);
     if (cacheData) {
         return cacheData;
@@ -401,7 +416,7 @@ export const getAllRarities = async () => {
 // Buscar cartas por rareza
 export const getCardsByRarity = async (rarity: string, page: number = 0) => {
     try {
-        const cacheKey = `fromQuery-list-card_rarity_${rarity}_page_${page}`;
+        const cacheKey = `fromQuery-list-card_rarity_${rarity}_page_${page}_${pageLanguage}`;
         // Intentar obtener de cache primero
         const cacheData = CacheService.get(cacheKey);
         if (cacheData) {

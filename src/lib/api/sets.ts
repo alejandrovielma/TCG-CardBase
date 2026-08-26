@@ -1,6 +1,7 @@
 import { Query, type Card, type StringEndpoint } from "@tcgdex/sdk";
 import { tcgdex } from "./api";
 import { CacheService } from "$lib/cache/cacheService";
+import { pageLanguage } from "$lib/language/languajeHandler";
 
 export const getSetById = async (id: string) =>{
     const set = await tcgdex.set.get(id);
@@ -38,7 +39,7 @@ export const getListSetFullData = async (sets: any[]) => {
 
 export const getAllSets = async () => {
     // Intenta obtener de cache primero
-    const cacheKey = 'all-sets-list';
+    const cacheKey = `all-sets-list_${pageLanguage}`;
     const cacheData = CacheService.get(cacheKey);
     if (cacheData) {
         return cacheData;
